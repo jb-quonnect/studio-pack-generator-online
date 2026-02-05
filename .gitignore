@@ -1,0 +1,36 @@
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# TTS cache (will be regenerated)
+.tts_cache/
+
+# Temp files
+*.tmp
+temp_*/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Piper models (large files)
+models/*.onnx
+
+# Session files
+.streamlit/sessions/

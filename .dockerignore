@@ -1,0 +1,32 @@
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# IDE
+.idea/
+.vscode/
+
+# TTS cache
+.tts_cache/
+
+# Git
+.git/
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Piper models (use curl to download at runtime)
+models/*.onnx
+
+# Documentation
+*.md
+!README.md

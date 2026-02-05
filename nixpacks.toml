@@ -1,0 +1,10 @@
+# Nixpacks configuration for Coolify deployment
+
+[phases.setup]
+nixPkgs = ["python311", "ffmpeg", "espeak-ng"]
+
+[phases.install]
+cmds = ["pip install -r requirements.txt", "pip install piper-tts"]
+
+[start]
+cmd = "streamlit run app.py --server.port=8501 --server.address=0.0.0.0"

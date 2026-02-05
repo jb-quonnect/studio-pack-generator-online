@@ -1,0 +1,8 @@
+# Studio Pack Generator Online Dependencies
+
+streamlit>=1.30.0
+pydub>=0.25.1
+feedparser>=6.0.10
+Pillow>=10.0.0
+requests>=2.31.0
+gTTS>=2.5.0
