@@ -4,7 +4,7 @@
 nixPkgs = ["python311", "ffmpeg", "espeak-ng"]
 
 [phases.install]
-cmds = ["pip install -r requirements.txt", "pip install piper-tts"]
+cmds = ["python -m pip install -r requirements.txt", "python -m pip install piper-tts"]
 
 [start]
 cmd = "streamlit run app.py --server.port=8501 --server.address=0.0.0.0"
