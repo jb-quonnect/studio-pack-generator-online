@@ -31,4 +31,4 @@ RUN chmod +x start.sh
 HEALTHCHECK CMD ffmpeg -version && espeak-ng --version || exit 1
 
 # Run the application
-CMD ["./start.sh"]
+CMD ["bash", "start.sh"]
