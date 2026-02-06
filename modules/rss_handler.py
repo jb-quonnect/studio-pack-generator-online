@@ -142,7 +142,7 @@ def parse_rss_feed(url: str) -> Optional[RssFeed]:
         
         # Parse episodes
         for entry in feed.entries:
-            episode = parse_episode(entry)
+            episode = parse_episode(entry, rss_feed.image_url)
             if episode:
                 rss_feed.episodes.append(episode)
         
@@ -154,64 +154,69 @@ def parse_rss_feed(url: str) -> Optional[RssFeed]:
         return None
 
 
-def parse_episode(entry: Dict) -> Optional[RssEpisode]:
+def parse_episode(entry: Dict, feed_image_url: Optional[str] = None) -> Optional[RssEpisode]:
     """
     Parse a single episode entry from feedparser.
     
     Args:
         entry: Feedparser entry dict
+        feed_image_url: URL of the main feed image (to avoid duplicates)
         
     Returns:
         RssEpisode or None if no audio enclosure
     """
-    # Find audio enclosure
-    audio_url = None
-    for enclosure in entry.get('enclosures', []):
-        if 'audio' in enclosure.get('type', ''):
-            audio_url = enclosure.get('href') or enclosure.get('url')
-            break
-    
-    # Also check media content
-    if not audio_url:
-        for media in entry.get('media_content', []):
-            if 'audio' in media.get('type', ''):
-                audio_url = media.get('url')
-                break
-    
-    # Also check links
-    if not audio_url:
-        for link in entry.get('links', []):
-            if 'audio' in link.get('type', ''):
-                audio_url = link.get('href')
-                break
-    
-    if not audio_url:
-        return None  # No audio found
-    
-    # Get title
-    title = entry.get('title', 'Untitled Episode')
-    
-    # Get description
-    description = ''
-    if 'summary' in entry:
-        description = entry['summary']
-    elif 'description' in entry:
-        description = entry['description']
-    
-    # Strip HTML from description
-    description = re.sub(r'<[^>]+>', '', description)[:500]
-    
-    # Get duration
-    duration = 0.0
-    if 'itunes_duration' in entry:
-        duration = parse_duration(entry['itunes_duration'])
-    
+    # ... (rest of function) ...
+
     # Get image
     image_url = None
+    candidates = []
+    
+    # 1. Try itunes_image (specific)
+    if 'itunes_image' in entry:
+        if isinstance(entry['itunes_image'], dict):
+            candidates.append(entry['itunes_image'].get('href'))
+        elif isinstance(entry['itunes_image'], str):
+             candidates.append(entry['itunes_image'])
+
+    # 2. Try image tag
     if 'image' in entry:
-        image_url = entry['image'].get('href')
-    elif 'itunes_image' in entry:
-        image_url = entry['itunes_image'].get('href')
+        if isinstance(entry['image'], dict):
+             candidates.append(entry['image'].get('href'))
+        elif isinstance(entry['image'], str):
+             candidates.append(entry['image'])
+             
+    # 3. Try media_content
+    if 'media_content' in entry:
+        for media in entry['media_content']:
+            if 'image' in media.get('type', '') or media.get('medium') == 'image':
+                candidates.append(media.get('url'))
+                
+    # 4. Try media_thumbnail
+    if 'media_thumbnail' in entry:
+         thumbs = entry['media_thumbnail']
+         if isinstance(thumbs, list):
+             for t in thumbs:
+                 candidates.append(t.get('url'))
+         elif isinstance(thumbs, dict):
+             candidates.append(thumbs.get('url'))
+             
+    # 5. Try links
+    if 'links' in entry:
+        for link in entry['links']:
+            if 'image' in link.get('type', '') or link.get('rel') == 'image':
+                candidates.append(link.get('href'))
+
+    # Select the first candidate that is NOT the feed image
+    for url in candidates:
+        if url and url != feed_image_url:
+            image_url = url
+            break
+            
+    # Fallback to feed image if nothing unique found
+    if not image_url and feed_image_url:
+        image_url = feed_image_url
+    elif not image_url and candidates:
+        image_url = candidates[0]
     
     # Get season/episode numbers
     season = None
