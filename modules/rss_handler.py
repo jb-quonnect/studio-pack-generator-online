@@ -165,8 +165,31 @@ def parse_episode(entry: Dict, feed_image_url: Optional[str] = None) -> Optional
     Returns:
         RssEpisode or None if no audio enclosure
     """
-    # ... (rest of function) ...
-
+    title = entry.get('title', 'Unknown Episode')
+    description = entry.get('description') or entry.get('summary', '')
+    
+    # Find audio enclosure
+    audio_url = ""
+    duration_str = "0"
+    
+    # Check for enclosures
+    for enclosure in entry.get('enclosures', []):
+        mime_type = enclosure.get('type', '')
+        if mime_type.startswith('audio/') or enclosure.get('medium') == 'audio':
+            audio_url = enclosure.get('href')
+            # Try to get duration from enclosure if available
+            # Note: Feedparser sometimes puts duration in different places
+            break
+            
+    # Check for itunes:duration
+    if 'itunes_duration' in entry:
+        duration_str = entry['itunes_duration']
+    
+    # Parse duration
+    duration = parse_duration(str(duration_str))
+    
+    if not audio_url:
+        return None
     # Get image
     image_url = None
     candidates = []
