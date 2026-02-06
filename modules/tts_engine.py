@@ -240,10 +240,12 @@ class TTSEngine:
         
         # Try Piper first
         if self.piper_available:
+            logger.info(f"Attempting Piper synthesis for: {text[:20]}...")
             success = self._synthesize_piper(text, output_path, model_name)
             if success:
                 self._cache_result(output_path, text, model_name)
                 return True
+            logger.warning("Piper synthesis failed, trying fallback...")
         
         # Fallback to gTTS
         if self.config.fallback_to_gtts and self.gtts_available:
@@ -269,18 +271,29 @@ class TTSEngine:
                     return False
             
             model_path = os.path.join(self.config.models_dir, f"{model_name}.onnx")
+            wav_path = output_path.replace('.mp3', '.wav')
             
             # Try Python API first
             try:
                 from piper import PiperVoice
+                logger.info("Using Piper Python API")
                 
                 voice = PiperVoice.load(model_path)
                 
-                # Generate to WAV first
-                wav_path = output_path.replace('.mp3', '.wav')
                 with open(wav_path, 'wb') as wav_file:
                     voice.synthesize(text, wav_file)
                 
+                # Verify WAV file
+                if os.path.exists(wav_path):
+                    size = os.path.getsize(wav_path)
+                    logger.info(f"Piper (Python) generated WAV size: {size} bytes")
+                    if size < 100:
+                        logger.error("Generated WAV is too small/empty")
+                        return False
+                else:
+                    logger.error("WAV file not created by Python API")
+                    return False
+
                 # Convert to MP3
                 convert_audio(wav_path, output_path, normalize=True)
                 
@@ -290,11 +303,13 @@ class TTSEngine:
                 
                 return True
                 
-            except ImportError:
-                pass
+            except ImportError as ie:
+                logger.info(f"Piper Python API not available: {ie}")
+            except Exception as e:
+                logger.error(f"Piper Python API error: {e}")
             
             # Try command line
-            wav_path = output_path.replace('.mp3', '.wav')
+            logger.info("Falling back to Piper CLI")
             
             cmd = [
                 'piper',
@@ -310,7 +325,18 @@ class TTSEngine:
             )
             
             if result.returncode != 0:
-                logger.error(f"Piper error: {result.stderr.decode()}")
+                logger.error(f"Piper CLI error: {result.stderr.decode()}")
+                return False
+                
+            # Verify WAV file
+            if os.path.exists(wav_path):
+                size = os.path.getsize(wav_path)
+                logger.info(f"Piper (CLI) generated WAV size: {size} bytes")
+                if size < 100:
+                    logger.error(f"Generated WAV is too small/empty. Stderr: {result.stderr.decode()}")
+                    return False
+            else:
+                logger.error("WAV file not created by CLI")
                 return False
             
             # Convert to MP3
