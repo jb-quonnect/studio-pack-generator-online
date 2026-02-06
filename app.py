@@ -230,6 +230,11 @@ def render_expert_options():
             if not health["piper_module"] and not health["piper_bin"]:
                 st.warning("Piper n'est pas détecté. Le système utilisera gTTS si internet est disponible.")
 
+            st.markdown("---")
+            st.caption(f"OS: {health['details'].get('distro', 'N/A')}")
+            with st.expander("Voir Message Erreur FFmpeg"):
+                st.code(health['details'].get('ffmpeg_error', 'Pas d\'erreur'))
+
 
 def render_input_tabs():
     """Affiche les onglets de sélection du type d'entrée."""
@@ -260,36 +265,48 @@ def check_system_health():
         "piper_module": False,
         "piper_bin": False,
         "espeak": False,
-        "write_access": False
+        "write_access": False,
+        "details": {}
     }
     
+    # 0. Environment Fingerprint
+    import platform
+    health["details"]["os"] = platform.system() + " " + platform.release()
+    health["details"]["path"] = os.environ.get("PATH", "")
+    try:
+        if os.path.exists("/etc/os-release"):
+            with open("/etc/os-release") as f:
+                health["details"]["distro"] = f.read().splitlines()[0] # First line usually NAME="..."
+    except: 
+        health["details"]["distro"] = "Unknown"
+
     # 1. Check FFmpeg
     try:
         subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True)
         health["ffmpeg"] = True
-    except:
-        pass
+    except Exception as e:
+        health["details"]["ffmpeg_error"] = str(e)
         
     # 2. Check Piper Module
     try:
         import piper
         health["piper_module"] = True
-    except ImportError:
-        pass
+    except ImportError as e:
+        health["details"]["piper_module_error"] = str(e)
         
     # 3. Check Piper Binary
     try:
         subprocess.run(["piper", "--help"], capture_output=True, timeout=2)
         health["piper_bin"] = True
-    except:
-        pass
+    except Exception as e:
+         health["details"]["piper_bin_error"] = str(e)
 
     # 4. Check Espeak
     try:
         subprocess.run(["espeak-ng", "--version"], capture_output=True, check=True)
         health["espeak"] = True
-    except:
-        pass
+    except Exception as e:
+        health["details"]["espeak_error"] = str(e)
         
     # 5. Write Access
     try:
@@ -298,8 +315,8 @@ def check_system_health():
             f.write("test")
         os.remove(test_file)
         health["write_access"] = True
-    except:
-        pass
+    except Exception as e:
+        health["details"]["write_error"] = str(e)
         
     return health
 
