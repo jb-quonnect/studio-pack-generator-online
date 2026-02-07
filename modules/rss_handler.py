@@ -115,6 +115,17 @@ def parse_rss_feed(url: str) -> Optional[RssFeed]:
         logger.error("feedparser not installed")
         return None
     
+    # Handle Radio France Virtual URLs
+    if url.startswith('rf://'):
+        try:
+            from .radiofrance_api import RadioFranceClient
+            show_id = url.replace('rf://', '')
+            logger.info(f"Detected Radio France virtual URL for show ID: {show_id}")
+            return RadioFranceClient.get_feed(show_id)
+        except Exception as e:
+            logger.error(f"Failed to fetch Radio France feed: {e}")
+            return None
+
     try:
         logger.info(f"Parsing RSS feed: {url}")
         

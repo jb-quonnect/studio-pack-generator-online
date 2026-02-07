@@ -450,6 +450,10 @@ def render_rss_input():
     st.markdown("### 📡 Import de Podcast")
     st.markdown("Recherchez un podcast ou collez directement l'URL d'un flux RSS.")
     
+    # Initialize session state for search
+    if 'rss_search_results' not in st.session_state:
+        st.session_state.rss_search_results = None
+    
     # Search/URL Input
     col_search, col_btn = st.columns([4, 1])
     
@@ -475,8 +479,9 @@ def render_rss_input():
                 feed = parse_rss_feed(search_query)
                 if feed:
                     st.session_state.rss_feed = feed
+                    st.session_state.rss_search_results = None # Clear search results
                     st.success(f"✅ {len(feed.episodes)} épisodes trouvés")
-                    st.rerun() # Force refresh to show episodes
+                    st.rerun()
                 else:
                     st.error("❌ Impossible de charger le flux RSS")
         else:
@@ -487,44 +492,50 @@ def render_rss_input():
                 results = unified_search(search_query)
                 
             if results:
-                st.markdown(f"**{len(results)} résultats trouvés :**")
-                
-                # Display results in a grid
-                cols = st.columns(3)
-                for idx, res in enumerate(results):
-                    with cols[idx % 3]:
-                        with st.container(border=True):
-                            # Image
-                            if res.image_url:
-                                st.image(res.image_url, use_container_width=True)
-                            
-                            # Info
-                            st.markdown(f"**{res.title}**")
-                            st.caption(res.author)
-                            
-                            # Select Button
-                            if st.button("Choisir", key=f"sel_{idx}"):
-                                with st.spinner("Chargement..."):
-                                    feed = parse_rss_feed(res.feed_url)
-                                    if feed:
-                                        st.session_state.rss_feed = feed
-                                        st.rerun()
-                                    else:
-                                        st.error(f"Erreur lors du chargement : {res.feed_url}")
+                st.session_state.rss_search_results = results
             else:
+                st.session_state.rss_search_results = []
                 st.warning("Aucun podcast trouvé. Essayez une autre recherche ou une URL directe.")
+
+    # Display Search Results (Persisted)
+    if st.session_state.rss_search_results:
+        st.markdown(f"**{len(st.session_state.rss_search_results)} résultats trouvés :**")
+        
+        # Display results in a grid
+        cols = st.columns(3)
+        for idx, res in enumerate(st.session_state.rss_search_results):
+            with cols[idx % 3]:
+                with st.container(border=True):
+                    # Image
+                    if res.image_url:
+                        st.image(res.image_url, use_container_width=True)
+                    
+                    # Info
+                    st.markdown(f"**{res.title}**")
+                    st.caption(res.author)
+                    
+                    # Select Button
+                    if st.button("Choisir", key=f"sel_{idx}", use_container_width=True):
+                        with st.spinner("Chargement..."):
+                            feed = parse_rss_feed(res.feed_url)
+                            if feed:
+                                st.session_state.rss_feed = feed
+                                st.session_state.rss_search_results = None # Clear search to show feed
+                                st.rerun()
+                            else:
+                                st.error(f"Erreur lors du chargement : {res.feed_url}")
+        
+        st.markdown("---")
 
     # Display loaded feed (Common for both Search and Direct URL)
     if st.session_state.get('rss_feed'):
-        # Divider if we have search results above? 
-        # Actually standard flow clears search results on rerun so we are good.
-        
         feed = st.session_state.rss_feed
         
-        st.markdown("---")
         st.markdown(f"### 🎙️ {feed.title}")
         if feed.description:
             st.caption(feed.description[:200] + "..." if len(feed.description) > 200 else feed.description)
+        
+        # Start of existing feed display logic...
         
         # Episodes per part slider
         st.slider(

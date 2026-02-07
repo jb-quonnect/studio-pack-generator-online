@@ -39,7 +39,7 @@ class SearchResult:
         return self.feed_url == other.feed_url
 
 
-def search_itunes(query: str, limit: int = 15) -> List[SearchResult]:
+def search_itunes(query: str, limit: int = 25) -> List[SearchResult]:
     """
     Search podcasts using iTunes API.
     """
@@ -73,43 +73,29 @@ def search_itunes(query: str, limit: int = 15) -> List[SearchResult]:
     return results
 
 
-def search_aerion(query: str) -> List[SearchResult]:
+def search_radio_france(query: str) -> List[SearchResult]:
     """
-    Search podcasts using Aerion (Radio France) API.
+    Search podcasts using internal Radio France API.
     """
     results = []
     try:
-        # Aerion worker expects 'q' parameter
-        params = {"q": query}
-        response = requests.get(AERION_API_URL, params=params, timeout=5)
-        response.raise_for_status()
-        data = response.json()
+        from .radiofrance_api import RadioFranceClient
         
-        # Structure depends on Aerion response format
-        # Assuming list of objects based on typical worker behavior for this specific endpoint
-        # The user provided example URL structure, but not exact JSON response.
-        # We'll validatethe response structure defensively.
+        # Call official API
+        rf_results = RadioFranceClient.search_shows(query)
         
-        items = data if isinstance(data, list) else data.get("results", [])
-        
-        for item in items:
-            # Adapt keys based on likely Aerion/Radio France structure
-            # If standard worker is used, it often mimics iTunes or returns flat list
-            feed_url = item.get("feedUrl") or item.get("url") or item.get("rss")
-            if not feed_url:
-                continue
-                
+        for item in rf_results:
             results.append(SearchResult(
-                title=item.get("title") or item.get("collectionName", "Unknown"),
-                author=item.get("author") or "Radio France",
-                feed_url=feed_url,
-                image_url=item.get("image") or item.get("artworkUrl", ""),
-                source="aerion",
+                title=item.get("title", "Inconnu"),
+                author="Radio France",
+                feed_url=item.get("feed_url"), # Will be rf://{id}
+                image_url=item.get("image_url", ""),
+                source="radio_france",
                 description=item.get("description", "")
             ))
             
     except Exception as e:
-        logger.error(f"Aerion search failed: {e}")
+        logger.error(f"Radio France search failed: {e}")
         
     return results
 
@@ -123,10 +109,10 @@ def unified_search(query: str) -> List[SearchResult]:
     
     with ThreadPoolExecutor(max_workers=2) as executor:
         future_itunes = executor.submit(search_itunes, query)
-        future_aerion = executor.submit(search_aerion, query)
+        future_rf = executor.submit(search_radio_france, query)
         
         # Wait for both
-        futures = {future_itunes: "itunes", future_aerion: "aerion"}
+        futures = {future_itunes: "itunes", future_rf: "radio_france"}
         for future in as_completed(futures):
             source = futures[future]
             try:
@@ -148,10 +134,10 @@ def unified_search(query: str) -> List[SearchResult]:
     unique_results = {}
     
     # Process Aerion first to populate dict (priority)
-    aerion_results = [r for r in all_results if r.source == "aerion"]
+    rf_results = [r for r in all_results if r.source == "radio_france"]
     itunes_results = [r for r in all_results if r.source == "itunes"]
     
-    for r in aerion_results:
+    for r in rf_results:
         unique_results[r.feed_url] = r
         
     for r in itunes_results:
