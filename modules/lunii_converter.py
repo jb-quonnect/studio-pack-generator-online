@@ -701,7 +701,8 @@ class LuniiPackConverter:
         
         # Generate pack reference (8-char hex from UUID)
         pack_uuid = uuid.uuid4()
-        pack_ref = pack_uuid.hex[:8].upper()
+        # REF = last 8 hex chars of UUID (matching olup/lunii-admin-web uuidToRef convention)
+        pack_ref = pack_uuid.hex[-8:].upper()
         
         # Create output structure
         content_dir = os.path.join(output_dir, ".content", pack_ref)
@@ -813,10 +814,14 @@ class LuniiPackConverter:
         
         # Generate metadata (md file - YAML)
         self._update_progress(0.85, "Génération des métadonnées...")
+        # Description from story.json
+        description = story.get('description', '')
         md_content = (
             f"title: {title}\n"
-            f"uuid: {pack_uuid}\n"
+            f"description: {description}\n"
+            f"uuid: {str(pack_uuid)}\n"
             f"ref: {pack_ref}\n"
+            f"packType: custom\n"
             f"version: {self.version}\n"
             f"stageNodes: {len(stage_nodes)}\n"
             f"images: {len(image_assets)}\n"
