@@ -187,7 +187,7 @@ class RadioFranceClient:
                 info_resp = requests.get(f"{API_BASE_URL}/shows/{show_id}", headers=HEADERS)
                 if info_resp.ok:
                     data_fallback = info_resp.json().get('data', {})
-                    # Handle nesting under 'shows' -> {id} -> details
+                    # Handle nesting under 'shows' -> {id} -> details (Common in fallbacks)
                     if 'shows' in data_fallback and show_id in data_fallback['shows']:
                         show_info = data_fallback['shows'][show_id]
                     else:
@@ -195,6 +195,9 @@ class RadioFranceClient:
             
             if not show_info:
                 logger.error("Could not fetch show info")
+                # Even if show info fails, we might have episodes. But RssFeed needs title.
+                # Let's try to extract from first diffusion if available?
+                # For now return None as before, but with better error logging above.
                 return None
 
             # 2. Build RssFeed object
@@ -206,10 +209,41 @@ class RadioFranceClient:
                 language="fr"
             )
             
+            # Image extraction with fallback to parent show image logic
+            # "Les Odyssées symphoniques" might not have an image, but parent "Les Odyssées" does?
+            # The API response for specific show doesn't link to parent visuals easily in 'show_info'
+            # But earlier we saw 'relationships' -> 'show' in diffusions...
+            # If show_info has no visuals, we can't do much unless we query parent.
+            # However, the debug output showed 'visuals' as empty list [] for the symphonic show.
+            
             feed.image_url = RadioFranceClient._get_image_url(
                 show_info.get('visuals'), 
                 show_info.get('mainImage')
             )
+            
+            # Fallback: If no image, try to get image from parent show using relationships
+            if not feed.image_url:
+                try:
+                    # Check relationships for 'show' (parent)
+                    rels = show_info.get('relationships', {})
+                    parent_ids = rels.get('show', [])
+                    if parent_ids:
+                        parent_id = parent_ids[0]
+                        logger.info(f"No image for {show_id}, fetching parent show {parent_id} for image")
+                        parent_resp = requests.get(f"{API_BASE_URL}/shows/{parent_id}", headers=HEADERS)
+                        if parent_resp.ok:
+                            parent_data_wrapper = parent_resp.json().get('data', {})
+                            # Handle nesting for parent too
+                            parent_info = parent_data_wrapper
+                            if 'shows' in parent_data_wrapper and parent_id in parent_data_wrapper['shows']:
+                                parent_info = parent_data_wrapper['shows'][parent_id]
+                                
+                            feed.image_url = RadioFranceClient._get_image_url(
+                                parent_info.get('visuals'),
+                                parent_info.get('mainImage')
+                            )
+                except Exception as e:
+                     logger.warning(f"Failed to fetch parent show image: {e}")
             
             # 3. Build RssEpisodes
             for item in all_diffusions:

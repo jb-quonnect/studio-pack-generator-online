@@ -454,22 +454,23 @@ def render_rss_input():
     if 'rss_search_results' not in st.session_state:
         st.session_state.rss_search_results = None
     
-    # Search/URL Input
-    col_search, col_btn = st.columns([4, 1])
-    
-    with col_search:
-        search_query = st.text_input(
-            "Recherche / RSS",
-            placeholder="Ex: France Inter, Les Odyssées, ou https://...",
-            key='rss_input',
-            label_visibility="collapsed"
-        )
-    
-    with col_btn:
-        search_clicked = st.button("🔎 Rechercher", use_container_width=True)
+    # Search/URL Input - Wrapped in form for Enter key support
+    with st.form("search_form"):
+        col_search, col_btn = st.columns([4, 1])
+        
+        with col_search:
+            search_query = st.text_input(
+                "Recherche / RSS",
+                placeholder="Ex: France Inter, Les Odyssées, ou https://...",
+                key='rss_input',
+                label_visibility="collapsed"
+            )
+        
+        with col_btn:
+            search_submitted = st.form_submit_button("🔎 Rechercher", use_container_width=True)
     
     # Handle Input (Search vs URL)
-    if search_clicked and search_query:
+    if search_submitted and search_query:
         # Check if it's a URL
         from urllib.parse import urlparse
         parsed = urlparse(search_query)
