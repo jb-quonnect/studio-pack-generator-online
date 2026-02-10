@@ -50,6 +50,25 @@ This application uses the following open-source libraries:
 
 ---
 
+## Inspiration & Related Projects
+
+### jersou/studio-pack-generator
+- **License:** MIT License
+- **Homepage:** https://github.com/jersou/studio-pack-generator
+- **Purpose:** Original project this fork is based on (pack generation logic)
+
+### Aerion/rss-radio-france-pour-tous
+- **License:** MIT License
+- **Homepage:** https://github.com/Aerion/rss-radio-france-pour-tous
+- **Purpose:** Inspiration for Radio France RSS feed integration
+
+### olup/lunii-admin-web
+- **License:** MIT License
+- **Homepage:** https://github.com/olup/lunii-admin-web
+- **Purpose:** Lunii native format specifications and USB transfer logic
+
+---
+
 ## Fonts
 
 The application uses system fonts (Arial, etc.) for image generation.

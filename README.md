@@ -108,18 +108,28 @@ Les packs générés sont compatibles avec :
 
 ---
 
-## 🙏 Crédits
+## 🙏 Crédits & Remerciements
 
-- **[jersou/studio-pack-generator](https://github.com/jersou/studio-pack-generator)** — Projet original dont ce fork est issu
-- **[marian-m12l/studio](https://github.com/marian-m12l/studio)** — Format de pack et application STUdio
-- **[rhasspy/piper](https://github.com/rhasspy/piper)** — Moteur TTS haute qualité
-- **[Streamlit](https://streamlit.io)** — Framework web Python
+Ce projet n'existerait pas sans le travail remarquable de ces projets open source et de leurs contributeurs :
+
+| Projet | Contributeur(s) | Contribution |
+|--------|------------------|--------------|
+| **[jersou/studio-pack-generator](https://github.com/jersou/studio-pack-generator)** | [@jersou](https://github.com/jersou) et contributeurs | Projet original dont ce fork est issu — logique de génération de packs Studio |
+| **[Aerion/rss-radio-france-pour-tous](https://github.com/Aerion/rss-radio-france-pour-tous)** | [@Aerion](https://github.com/Aerion) et contributeurs | Inspiration pour l'intégration des flux RSS Radio France |
+| **[olup/lunii-admin-web](https://github.com/olup/lunii-admin-web)** | [@olup](https://github.com/olup) et contributeurs | Spécifications du format Lunii natif et logique de transfert USB |
+| **[marian-m12l/studio](https://github.com/marian-m12l/studio)** | [@marian-m12l](https://github.com/marian-m12l) | Format de pack Studio et application STUdio |
+| **[rhasspy/piper](https://github.com/rhasspy/piper)** | [@rhasspy](https://github.com/rhasspy) | Moteur TTS haute qualité |
+| **[Streamlit](https://streamlit.io)** | Snowflake | Framework web Python |
+
+> 🫶 Un grand merci à **tous les contributeurs** de ces projets qui, par leur travail et leur partage, rendent possible cet outil.
 
 ---
 
 ## 📄 Licence
 
-Ce projet est distribué sous licence MIT. Voir [LICENSES.md](LICENSES.md) pour les licences des dépendances tierces.
+Ce projet est distribué sous licence **MIT**.
+
+Il s'appuie sur de nombreuses dépendances open source, chacune sous sa propre licence. Voir [LICENSES.md](LICENSES.md) pour le détail complet.
 
 ---
 
