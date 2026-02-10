@@ -587,13 +587,12 @@ def validate_studio_pack(zip_path: str) -> Tuple[bool, str]:
             # Verify assets exist
             missing = []
             for img in images:
-                asset_path = f"assets/{img}"
-                if asset_path not in names:
-                    missing.append(asset_path)
+                # story.json may store paths as 'assets/xxx.png' or just 'xxx.png'
+                if img not in names and f"assets/{img}" not in names:
+                    missing.append(img)
             for aud in audios:
-                asset_path = f"assets/{aud}"
-                if asset_path not in names:
-                    missing.append(asset_path)
+                if aud not in names and f"assets/{aud}" not in names:
+                    missing.append(aud)
             
             if missing:
                 return False, f"{len(missing)} assets manquants: {', '.join(missing[:5])}"
@@ -718,11 +717,19 @@ class LuniiPackConverter:
         image_set = set()
         audio_set = set()
         
+        # Track the actual file paths within the extracted dir
+        asset_paths = {}  # asset_ref -> actual_path
+        
         for node in stage_nodes:
             img = node.get('image', '')
             if img and img not in image_set:
                 image_set.add(img)
                 image_assets.append(img)
+                # Resolve actual path: story.json may store 'assets/x.png' or just 'x.png'
+                if os.path.exists(os.path.join(extract_dir, img)):
+                    asset_paths[img] = os.path.join(extract_dir, img)
+                else:
+                    asset_paths[img] = os.path.join(extract_dir, "assets", img)
             
             # Collect both navigation audio and story audio
             for key in ('audio', 'storyAudio'):
@@ -730,6 +737,10 @@ class LuniiPackConverter:
                 if aud and aud not in audio_set:
                     audio_set.add(aud)
                     audio_assets.append(aud)
+                    if os.path.exists(os.path.join(extract_dir, aud)):
+                        asset_paths[aud] = os.path.join(extract_dir, aud)
+                    else:
+                        asset_paths[aud] = os.path.join(extract_dir, "assets", aud)
         
         # Build asset -> index maps
         image_map = {asset: idx for idx, asset in enumerate(image_assets)}
@@ -738,7 +749,7 @@ class LuniiPackConverter:
         # Convert images
         self._update_progress(0.2, f"Conversion de {len(image_assets)} images...")
         for idx, img_asset in enumerate(image_assets):
-            img_path = os.path.join(extract_dir, "assets", img_asset)
+            img_path = asset_paths.get(img_asset, '')
             if not os.path.exists(img_path):
                 logger.warning(f"Image asset not found: {img_asset}")
                 continue
@@ -756,7 +767,7 @@ class LuniiPackConverter:
         # Convert audio
         self._update_progress(0.4, f"Conversion de {len(audio_assets)} fichiers audio...")
         for idx, aud_asset in enumerate(audio_assets):
-            aud_path = os.path.join(extract_dir, "assets", aud_asset)
+            aud_path = asset_paths.get(aud_asset, '')
             if not os.path.exists(aud_path):
                 logger.warning(f"Audio asset not found: {aud_asset}")
                 continue
