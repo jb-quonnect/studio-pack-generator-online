@@ -248,58 +248,93 @@ def v2_compute_specific_key(uuid_bytes: bytes) -> bytes:
 def convert_image_to_lunii_bmp(image_path: str) -> bytes:
     """
     Convert an image to Lunii-compatible BMP format.
-    Format: 320x240, 4-bit Grayscale (16 levels), uncompressed.
+    Format: 320x240, 4-bit Grayscale (16 levels), RLE4 compressed.
+    Matches olup/lunii-admin-web image.ts create4BitGrayscaleBMP exactly.
     """
     img = Image.open(image_path)
     img = img.convert('L')
     img = ImageOps.fit(img, (LUNII_IMAGE_WIDTH, LUNII_IMAGE_HEIGHT), method=Image.Resampling.LANCZOS)
-    img = img.quantize(colors=16)
+    # Flip vertically (BMP is bottom-up, reference flips before encoding)
     img = img.transpose(Image.FLIP_TOP_BOTTOM)
 
     width, height = img.size
     pixels = list(img.getdata())
 
-    row_size_bytes = width // 2
-    row_padding = (4 - (row_size_bytes % 4)) % 4
-    padded_row_size = row_size_bytes + row_padding
-
-    pixel_data = bytearray()
+    # RLE4 encode: encode as 4-bit grayscale with RLE compression (comp=2)
+    # Matching reference: quantize each pixel to 4-bit (0-15)
+    bmp_data = bytearray()
     for y in range(height):
         row_start = y * width
-        for x in range(0, width, 2):
-            p1 = pixels[row_start + x] & 0x0F
-            p2 = pixels[row_start + x + 1] & 0x0F if (x + 1) < width else 0
-            pixel_data.append((p1 << 4) | p2)
-        pixel_data.extend(b'\x00' * row_padding)
+        run_length = 0
+        run_color = 0
 
-    palette = bytearray()
-    for i in range(16):
-        gray = i * 17
-        palette.extend([gray, gray, gray, 0x00])
+        for x in range(width):
+            # Quantize 8-bit grayscale to 4-bit (0-15)
+            grayscale_value = pixels[row_start + x] // 16
 
+            if x == 0:
+                run_length = 1
+                run_color = grayscale_value
+                continue
+
+            if run_color == grayscale_value and run_length < 255:
+                run_length += 1
+            else:
+                # Write run: count, then color byte (high nibble = low nibble = color)
+                color8 = (run_color << 4) | run_color
+                bmp_data.append(run_length)
+                bmp_data.append(color8)
+                run_length = 1
+                run_color = grayscale_value
+
+        # Commit last run of the line
+        color8 = (run_color << 4) | run_color
+        bmp_data.append(run_length)
+        bmp_data.append(color8)
+
+        # End of line marker (not for last line)
+        if y < height - 1:
+            bmp_data.extend([0x00, 0x00])
+
+    # End of bitmap marker
+    bmp_data.extend([0x00, 0x01])
+
+    # Build BMP file
+    header_size = 54  # 14 (file header) + 40 (DIB header)
     palette_size = 16 * 4
-    header_size = 14 + 40 + palette_size
-    pixel_data_size = len(pixel_data)
-    file_size = header_size + pixel_data_size
+    data_offset = header_size + palette_size
+    data_size = len(bmp_data)
+    file_size = data_offset + data_size
 
-    bmp = bytearray()
-    bmp.extend(b'BM')
-    bmp.extend(struct.pack('<I', file_size))
-    bmp.extend(struct.pack('<HH', 0, 0))
-    bmp.extend(struct.pack('<I', header_size))
-    bmp.extend(struct.pack('<I', 40))
-    bmp.extend(struct.pack('<i', width))
-    bmp.extend(struct.pack('<i', height))
-    bmp.extend(struct.pack('<H', 1))
-    bmp.extend(struct.pack('<H', 4))
-    bmp.extend(struct.pack('<I', 0))
-    bmp.extend(struct.pack('<I', pixel_data_size))
-    bmp.extend(struct.pack('<i', 2835))
-    bmp.extend(struct.pack('<i', 2835))
-    bmp.extend(struct.pack('<I', 16))
-    bmp.extend(struct.pack('<I', 16))
-    bmp.extend(palette)
-    bmp.extend(pixel_data)
+    bmp = bytearray(file_size)
+
+    # BMP file header (14 bytes)
+    bmp[0:2] = b'BM'
+    struct.pack_into('<I', bmp, 2, file_size)
+    # Reserved (4 bytes, already 0)
+    struct.pack_into('<I', bmp, 10, data_offset)
+
+    # DIB header (40 bytes)
+    struct.pack_into('<I', bmp, 14, 40)        # Header size
+    struct.pack_into('<i', bmp, 18, width)     # Width
+    struct.pack_into('<i', bmp, 22, height)    # Height
+    struct.pack_into('<H', bmp, 26, 1)         # Color planes
+    struct.pack_into('<H', bmp, 28, 4)         # Bits per pixel
+    struct.pack_into('<I', bmp, 30, 2)         # Compression: BI_RLE4
+    struct.pack_into('<I', bmp, 34, data_size) # Image data size
+    # H/V resolution (0), palette colors (0), important colors (0) — already 0
+
+    # Palette: 16 grayscale entries (matching reference: (255/16)*i)
+    for i in range(16):
+        idx = header_size + i * 4
+        gray = int((255 / 16) * i)
+        bmp[idx] = gray      # Blue
+        bmp[idx + 1] = gray  # Green
+        bmp[idx + 2] = gray  # Red
+        bmp[idx + 3] = 0     # Reserved
+
+    # Pixel data
+    bmp[data_offset:data_offset + data_size] = bmp_data
 
     return bytes(bmp)
 
@@ -744,7 +779,7 @@ class LuniiPackConverter:
         action_nodes = story.get('actionNodes', [])
         title = story.get('title', 'Mon Pack')
         description = story.get('description', '')
-        pack_version = story.get('version', 1)
+        pack_version = story.get('version', 2)
 
         # Generate pack UUID and reference
         pack_uuid = uuid.uuid4()

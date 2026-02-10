@@ -1,114 +1,118 @@
-import os, sys, struct
+import os, struct, sys
 sys.path.insert(0, '.')
 from modules.lunii_converter import xxtea_decrypt
 
-ref = '03F2849E'
-base = os.path.join('D:\\', '.content', ref)
 out = []
 def p(s): out.append(str(s))
 
-ri = open(os.path.join(base, 'ri'), 'rb').read()
-dec_ri = xxtea_decrypt(ri[:min(512,len(ri))])
-p('RI: size=' + str(len(ri)) + ' dec=' + repr(dec_ri[:48].decode('ascii','replace')))
+device = 'D:\\'
+pi = open(os.path.join(device, '.pi'), 'rb').read()
+uuids = []
+for i in range(0, len(pi), 16):
+    c = pi[i:i+16]
+    if len(c)==16: uuids.append(c.hex())
 
-si = open(os.path.join(base, 'si'), 'rb').read()
-dec_si = xxtea_decrypt(si[:min(512,len(si))])
-p('SI: size=' + str(len(si)) + ' dec=' + repr(dec_si[:48].decode('ascii','replace')))
+last_hex = uuids[-1]
+ref = last_hex[-8:].upper()
+base = os.path.join(device, '.content', ref)
+p('Last pack REF: ' + ref)
+p('Dir exists: ' + str(os.path.exists(base)))
 
-sf_dir = os.path.join(base, 'sf', '000')
-sf_files = sorted(os.listdir(sf_dir))
-p('Audio files: ' + str(len(sf_files)) + ' names: ' + str(sf_files))
-for name in sf_files[:2]:
-    a = open(os.path.join(sf_dir, name), 'rb').read()
-    dec_a = xxtea_decrypt(a[:min(512,len(a))])
-    mp3 = len(dec_a)>=2 and dec_a[0]==0xFF and (dec_a[1]&0xE0)==0xE0
-    p('  ' + name + ': size=' + str(len(a)) + ' first4=' + dec_a[:4].hex() + ' mp3=' + str(mp3))
+if not os.path.exists(base):
+    p('Pack not found!')
+    with open('diag3.txt','w') as f: f.write('\n'.join(out))
+    print('Done'); exit()
 
+# BT size check
+bt_path = os.path.join(base, 'bt')
+try:
+    bt = open(bt_path, 'rb').read()
+    p('BT: ' + str(len(bt)) + 'B hex=' + bt[:16].hex())
+except Exception as e:
+    p('BT error: ' + str(e))
+
+# Compare our NI bytes 0-24 with working pack 52
+ni = open(os.path.join(base, 'ni'), 'rb').read()
+ni52 = open(os.path.join(device, '.content', '07C26EA8', 'ni'), 'rb').read()
+p('')
+p('=== NI Header comparison (first 25 bytes) ===')
+p('Ours hex: ' + ni[:25].hex())
+p('P52  hex: ' + ni52[:25].hex())
+
+# Compare first node
+p('')
+p('=== First Node comparison (bytes 512-556) ===')
+p('Ours hex: ' + ni[512:556].hex())
+p('P52  hex: ' + ni52[512:556].hex())
+
+# Check all our nodes
+nc = struct.unpack_from('<i', ni, 12)[0]
+p('')
+p('=== All our nodes ===')
+for idx in range(nc):
+    o = 512 + idx*44
+    p('Node' + str(idx) + ': ' + ni[o:o+44].hex())
+
+# Check image[0] BMP header details after decryption
 rf_dir = os.path.join(base, 'rf', '000')
 rf_files = sorted(os.listdir(rf_dir))
-p('Image files: ' + str(len(rf_files)) + ' names: ' + str(rf_files))
-for name in rf_files[:2]:
-    im = open(os.path.join(rf_dir, name), 'rb').read()
-    dec_i = xxtea_decrypt(im[:min(512,len(im))])
-    bmp = dec_i[:2]==b'BM'
-    p('  ' + name + ': size=' + str(len(im)) + ' first4=' + dec_i[:4].hex() + ' bmp=' + str(bmp))
+if rf_files:
+    im0 = open(os.path.join(rf_dir, rf_files[0]), 'rb').read()
+    dec = xxtea_decrypt(im0[:min(512, len(im0))])
+    rest = im0[512:]
+    full = dec + rest
+    # BMP header
+    sig = full[:2].decode('ascii','replace')
+    fsize = struct.unpack_from('<I', full, 2)[0]
+    offset = struct.unpack_from('<I', full, 10)[0]
+    w = struct.unpack_from('<i', full, 18)[0]
+    h = struct.unpack_from('<i', full, 22)[0]
+    bpp = struct.unpack_from('<H', full, 28)[0]
+    comp = struct.unpack_from('<I', full, 30)[0]
+    p('')
+    p('=== Image[0] BMP header ===')
+    p('sig=' + sig + ' fsize=' + str(fsize) + ' offset=' + str(offset))
+    p('w=' + str(w) + ' h=' + str(h) + ' bpp=' + str(bpp) + ' comp=' + str(comp))
+    p('file size actual: ' + str(len(im0)))
 
-ni = open(os.path.join(base, 'ni'), 'rb').read()
-p('NI: ver=' + str(struct.unpack_from('<H',ni,0)[0])
-  + ' pv=' + str(struct.unpack_from('<h',ni,2)[0])
-  + ' off=' + str(struct.unpack_from('<i',ni,4)[0])
-  + ' ns=' + str(struct.unpack_from('<i',ni,8)[0])
-  + ' nc=' + str(struct.unpack_from('<i',ni,12)[0])
-  + ' ic=' + str(struct.unpack_from('<i',ni,16)[0])
-  + ' sc=' + str(struct.unpack_from('<i',ni,20)[0])
-  + ' fac=' + str(ni[24]))
-# All nodes
-for idx in range(struct.unpack_from('<i',ni,12)[0]):
-    o = 512 + idx*44
-    p('  Node' + str(idx) + ': img=' + str(struct.unpack_from('<i',ni,o)[0])
-      + ' aud=' + str(struct.unpack_from('<i',ni,o+4)[0])
-      + ' okP=' + str(struct.unpack_from('<i',ni,o+8)[0])
-      + ' okC=' + str(struct.unpack_from('<i',ni,o+12)[0])
-      + ' okO=' + str(struct.unpack_from('<i',ni,o+16)[0])
-      + ' hmP=' + str(struct.unpack_from('<i',ni,o+20)[0])
-      + ' hmC=' + str(struct.unpack_from('<i',ni,o+24)[0])
-      + ' hmO=' + str(struct.unpack_from('<i',ni,o+28)[0])
-      + ' whl=' + str(struct.unpack_from('<h',ni,o+32)[0])
-      + ' ok=' + str(struct.unpack_from('<h',ni,o+34)[0])
-      + ' hm=' + str(struct.unpack_from('<h',ni,o+36)[0])
-      + ' pse=' + str(struct.unpack_from('<h',ni,o+38)[0])
-      + ' auto=' + str(struct.unpack_from('<h',ni,o+40)[0]))
+# Check working pack image for comparison
+rf52 = os.path.join(device, '.content', '07C26EA8', 'rf', '000')
+rf52_files = sorted(os.listdir(rf52))
+if rf52_files:
+    im52 = open(os.path.join(rf52, rf52_files[0]), 'rb').read()
+    dec52 = xxtea_decrypt(im52[:min(512, len(im52))])
+    rest52 = im52[512:]
+    full52 = dec52 + rest52
+    sig52 = full52[:2].decode('ascii','replace')
+    fsize52 = struct.unpack_from('<I', full52, 2)[0]
+    offset52 = struct.unpack_from('<I', full52, 10)[0]
+    w52 = struct.unpack_from('<i', full52, 18)[0]
+    h52 = struct.unpack_from('<i', full52, 22)[0]
+    bpp52 = struct.unpack_from('<H', full52, 28)[0]
+    comp52 = struct.unpack_from('<I', full52, 30)[0]
+    p('')
+    p('=== Working pack Image[0] BMP header ===')
+    p('sig=' + sig52 + ' fsize=' + str(fsize52) + ' offset=' + str(offset52))
+    p('w=' + str(w52) + ' h=' + str(h52) + ' bpp=' + str(bpp52) + ' comp=' + str(comp52))
+    p('file size actual: ' + str(len(im52)))
 
-li = open(os.path.join(base, 'li'), 'rb').read()
-p('LI: size=' + str(len(li)))
-dec_li = xxtea_decrypt(li[:min(512,len(li))])
-p('LI dec hex: ' + dec_li.hex())
-for i in range(0, len(dec_li), 4):
-    p('  li[' + str(i//4) + '] = ' + str(struct.unpack_from('<I', dec_li, i)[0]))
+# Check audio[0] MP3 frame header
+sf_dir = os.path.join(base, 'sf', '000')
+sf_files = sorted(os.listdir(sf_dir))
+if sf_files:
+    a0 = open(os.path.join(sf_dir, sf_files[0]), 'rb').read()
+    dec_a = xxtea_decrypt(a0[:min(512, len(a0))])
+    p('')
+    p('=== Audio[0] first 16 bytes ===')
+    p('Our: ' + dec_a[:16].hex())
 
-bt = open(os.path.join(base, 'bt'), 'rb').read()
-p('BT: size=' + str(len(bt)) + ' hex=' + bt[:16].hex())
+sf52 = os.path.join(device, '.content', '07C26EA8', 'sf', '000')
+sf52_files = sorted(os.listdir(sf52))
+if sf52_files:
+    a52 = open(os.path.join(sf52, sf52_files[0]), 'rb').read()
+    dec_a52 = xxtea_decrypt(a52[:min(512, len(a52))])
+    p('P52: ' + dec_a52[:16].hex())
 
-md = open(os.path.join(base, 'md'), 'r', encoding='utf-8', errors='replace').read()
-p('MD: ' + repr(md))
-
-# Compare with working pack 52
-p('')
-p('=== WORKING PACK 52 for comparison ===')
-ref2 = '07C26EA8'
-base2 = os.path.join('D:\\', '.content', ref2)
-ni2 = open(os.path.join(base2, 'ni'), 'rb').read()
-p('NI: ver=' + str(struct.unpack_from('<H',ni2,0)[0])
-  + ' pv=' + str(struct.unpack_from('<h',ni2,2)[0])
-  + ' off=' + str(struct.unpack_from('<i',ni2,4)[0])
-  + ' ns=' + str(struct.unpack_from('<i',ni2,8)[0])
-  + ' nc=' + str(struct.unpack_from('<i',ni2,12)[0])
-  + ' ic=' + str(struct.unpack_from('<i',ni2,16)[0])
-  + ' sc=' + str(struct.unpack_from('<i',ni2,20)[0])
-  + ' fac=' + str(ni2[24]))
-for idx in range(min(3, struct.unpack_from('<i',ni2,12)[0])):
-    o = 512 + idx*44
-    p('  Node' + str(idx) + ': img=' + str(struct.unpack_from('<i',ni2,o)[0])
-      + ' aud=' + str(struct.unpack_from('<i',ni2,o+4)[0])
-      + ' okP=' + str(struct.unpack_from('<i',ni2,o+8)[0])
-      + ' okC=' + str(struct.unpack_from('<i',ni2,o+12)[0])
-      + ' okO=' + str(struct.unpack_from('<i',ni2,o+16)[0])
-      + ' hmP=' + str(struct.unpack_from('<i',ni2,o+20)[0])
-      + ' hmC=' + str(struct.unpack_from('<i',ni2,o+24)[0])
-      + ' hmO=' + str(struct.unpack_from('<i',ni2,o+28)[0])
-      + ' whl=' + str(struct.unpack_from('<h',ni2,o+32)[0])
-      + ' ok=' + str(struct.unpack_from('<h',ni2,o+34)[0])
-      + ' hm=' + str(struct.unpack_from('<h',ni2,o+36)[0]))
-
-li2 = open(os.path.join(base2, 'li'), 'rb').read()
-dec_li2 = xxtea_decrypt(li2[:min(512,len(li2))])
-p('LI dec hex: ' + dec_li2.hex())
-for i in range(0, min(20, len(dec_li2)), 4):
-    p('  li[' + str(i//4) + '] = ' + str(struct.unpack_from('<I', dec_li2, i)[0]))
-
-bt2 = open(os.path.join(base2, 'bt'), 'rb').read()
-p('BT: size=' + str(len(bt2)))
-
-with open('verify_result.txt', 'w', encoding='utf-8') as f:
+with open('diag3.txt', 'w', encoding='utf-8') as f:
     f.write('\n'.join(out))
 print('Done')
