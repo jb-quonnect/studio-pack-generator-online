@@ -153,9 +153,11 @@
     }
 
     function v2GenerateBt(riEncrypted, specificKey) {
-        const firstBlockLength = Math.min(64, riEncrypted.length);
-        const firstBlock = riEncrypted.subarray(0, firstBlockLength);
-        return encryptXxtea(firstBlock, specificKey);
+        // BT must be exactly 64 bytes — pad RI input to 64 if shorter
+        const block = new Uint8Array(64);
+        const copyLen = Math.min(64, riEncrypted.length);
+        block.set(riEncrypted.subarray(0, copyLen));
+        return encryptXxtea(block, specificKey);
     }
 
     // ─── UUID Utilities ──────────────────────────────────────────────────────
