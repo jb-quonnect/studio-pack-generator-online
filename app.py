@@ -1052,23 +1052,16 @@ def render_lunii_upload():
         # Already converted — show results
         st.success(f"✅ Pack Lunii prêt: **{st.session_state.lunii_zip_filename}**")
         
-        col_dl, col_usb = st.columns(2)
-        
-        with col_dl:
-            st.download_button(
-                "📥 Télécharger le Pack Lunii",
-                st.session_state.lunii_zip_data,
-                file_name=st.session_state.lunii_zip_filename,
-                mime="application/zip",
-                type="primary",
-                use_container_width=True,
-                key="download_lunii"
-            )
-            st.caption("Décompressez sur votre Lunii (raccourci USB)")
-        
-        with col_usb:
-            # JS-based USB transfer (Chrome/Edge only)
-            _render_usb_transfer_button()
+        st.download_button(
+            "📥 Télécharger le Pack Lunii",
+            st.session_state.lunii_zip_data,
+            file_name=st.session_state.lunii_zip_filename,
+            mime="application/zip",
+            type="primary",
+            use_container_width=True,
+            key="download_lunii"
+        )
+        st.caption("Téléchargez le pack, puis utilisez le gestionnaire ci-dessous pour l'installer sur votre Lunii.")
         
         # Reconvert button
         if st.button("🔄 Reconvertir", key="reconvert_lunii"):
@@ -1076,6 +1069,12 @@ def render_lunii_upload():
             st.session_state.lunii_zip_data = None
             st.session_state.lunii_zip_filename = None
             st.rerun()
+        
+        st.markdown("---")
+        
+        # === Lunii Device Manager ===
+        st.subheader("🎧 Gestionnaire Lunii")
+        _render_lunii_manager()
     
     elif can_convert:
         if st.button("🎧 Convertir pour Lunii", type="primary", use_container_width=True, key="convert_lunii"):
@@ -1135,107 +1134,105 @@ def _run_lunii_conversion(version: str, aes_key=None, aes_iv=None):
             st.error("❌ La conversion a échoué. Vérifiez les logs pour plus de détails.")
             
     except Exception as e:
-        st.error(f"❌ Erreur lors de la conversion: {e}")
+        st.error(f"❌ Erreur: {e}")
         logger.error(f"Lunii conversion error: {e}", exc_info=True)
 
 
-def _render_usb_transfer_button():
-    """Render the USB transfer button with browser detection."""
+def _render_lunii_manager():
+    """Render the embedded Lunii device manager."""
     import streamlit.components.v1 as components
     
-    # JS component for USB transfer
-    js_code = """
-    <div id="lunii-transfer-container" style="text-align: center;">
-        <style>
-            .lunii-btn {
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: white;
-                border: none;
-                padding: 12px 24px;
-                border-radius: 8px;
-                font-size: 16px;
-                cursor: pointer;
-                width: 100%;
-                transition: all 0.3s ease;
-            }
-            .lunii-btn:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(102,126,234,0.4); }
-            .lunii-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
-            .lunii-status { margin-top: 8px; font-size: 13px; color: #888; }
-            .lunii-progress { width: 100%; height: 4px; background: #333; border-radius: 2px; margin-top: 8px; overflow: hidden; }
-            .lunii-progress-bar { height: 100%; background: linear-gradient(90deg, #667eea, #764ba2); transition: width 0.3s; }
-            .lunii-unsupported { color: #f0ad4e; font-size: 13px; margin-top: 4px; }
-        </style>
-        
-        <script>
-            const isSupported = 'showDirectoryPicker' in window;
-            const container = document.getElementById('lunii-transfer-container');
-            
-            if (isSupported) {
-                container.innerHTML += `
-                    <button class="lunii-btn" onclick="startTransfer()">🔌 Transférer via USB</button>
-                    <div class="lunii-progress" style="display:none;" id="lunii-pg">
-                        <div class="lunii-progress-bar" id="lunii-pb" style="width: 0%"></div>
-                    </div>
-                    <div class="lunii-status" id="lunii-st">Branchez votre Lunii en USB</div>
-                `;
-            } else {
-                container.innerHTML += `
-                    <button class="lunii-btn" disabled>🔌 Transférer via USB</button>
-                    <div class="lunii-unsupported">⚠️ Transfert USB non supporté sur ce navigateur.<br>Utilisez Chrome ou Edge.</div>
-                `;
-            }
-            
-            async function startTransfer() {
-                const btn = container.querySelector('.lunii-btn');
-                const progress = document.getElementById('lunii-pg');
-                const bar = document.getElementById('lunii-pb');
-                const status = document.getElementById('lunii-st');
-                
-                btn.disabled = true;
-                progress.style.display = 'block';
-                
-                try {
-                    const dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
-                    
-                    // Verify Lunii device
-                    let isLunii = false;
-                    for await (const entry of dirHandle.values()) {
-                        if (entry.name === '.pi' || entry.name === '.md') { isLunii = true; break; }
-                    }
-                    if (!isLunii) {
-                        try { await dirHandle.getDirectoryHandle('.content'); isLunii = true; } catch {}
-                    }
-                    
-                    if (!isLunii) {
-                        status.textContent = '❌ Appareil Lunii non détecté dans ce dossier';
-                        btn.disabled = false;
-                        progress.style.display = 'none';
-                        return;
-                    }
-                    
-                    status.textContent = '📦 Téléchargement du pack...';
-                    bar.style.width = '10%';
-                    
-                    // Notify Streamlit to provide the data via download
-                    status.textContent = '✅ Appareil Lunii détecté ! Utilisez le bouton Télécharger, puis copiez le contenu sur votre Lunii.';
-                    bar.style.width = '100%';
-                    btn.disabled = false;
-                    
-                } catch (error) {
-                    if (error.name === 'AbortError') {
-                        status.textContent = 'Transfert annulé';
-                    } else {
-                        status.textContent = '❌ Erreur: ' + error.message;
-                    }
-                    btn.disabled = false;
-                    progress.style.display = 'none';
-                }
-            }
-        </script>
-    </div>
+    # Read the JS file
+    js_path = os.path.join(os.path.dirname(__file__), "static", "lunii_manager.js")
+    try:
+        with open(js_path, 'r', encoding='utf-8') as f:
+            js_code = f.read()
+    except FileNotFoundError:
+        st.error("Fichier lunii_manager.js introuvable")
+        return
+    
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+    <style>
+      * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+      body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: transparent; color: #e0e0e0; }}
+      
+      /* Connect screen */
+      .lm-connect, .lm-unsupported {{ text-align: center; padding: 40px 20px; }}
+      .lm-connect .lm-icon, .lm-unsupported .lm-icon {{ font-size: 48px; margin-bottom: 12px; }}
+      .lm-connect h3, .lm-unsupported h3 {{ font-size: 18px; margin-bottom: 8px; color: #fff; }}
+      .lm-connect p, .lm-unsupported p {{ color: #999; font-size: 14px; margin-bottom: 20px; }}
+      
+      /* Buttons */
+      .lm-btn {{ border: none; border-radius: 8px; padding: 10px 20px; font-size: 14px; cursor: pointer; transition: all 0.2s; }}
+      .lm-btn-primary {{ background: linear-gradient(135deg, #667eea, #764ba2); color: #fff; }}
+      .lm-btn-primary:hover {{ transform: translateY(-1px); box-shadow: 0 4px 12px rgba(102,126,234,0.4); }}
+      .lm-btn-sm {{ background: rgba(255,255,255,0.1); color: #ccc; padding: 6px 12px; font-size: 13px; }}
+      .lm-btn-sm:hover {{ background: rgba(255,255,255,0.2); }}
+      .lm-btn-install {{ display: inline-flex; align-items: center; gap: 8px; }}
+      
+      /* Header */
+      .lm-header {{ display: flex; align-items: center; justify-content: space-between; padding: 8px 0; margin-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.1); }}
+      .lm-device-info {{ display: flex; align-items: center; gap: 12px; font-size: 13px; color: #999; }}
+      .lm-badge {{ padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: bold; text-transform: uppercase; }}
+      .lm-badge-v2 {{ background: #2d5a27; color: #7ed47e; }}
+      .lm-badge-v3 {{ background: #1a3a5c; color: #5da8e8; }}
+      
+      /* Install bar */
+      .lm-install-bar {{ display: flex; align-items: center; gap: 16px; padding: 10px 0; margin-bottom: 8px; }}
+      .lm-install-hint {{ font-size: 13px; color: #888; }}
+      .lm-installing {{ display: flex; align-items: center; gap: 12px; padding: 12px 0; color: #aaa; font-size: 14px; }}
+      
+      /* Spinner */
+      .lm-spinner {{ width: 20px; height: 20px; border: 2px solid rgba(255,255,255,0.2); border-top-color: #667eea; border-radius: 50%; animation: lm-spin 0.8s linear infinite; }}
+      @keyframes lm-spin {{ to {{ transform: rotate(360deg); }} }}
+      
+      /* Pack list */
+      .lm-pack-list {{ max-height: 500px; overflow-y: auto; }}
+      .lm-pack {{ display: flex; align-items: center; gap: 12px; padding: 12px; margin-bottom: 6px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; transition: border-color 0.2s; position: relative; }}
+      .lm-pack:hover {{ border-color: rgba(102,126,234,0.3); }}
+      
+      /* Arrows */
+      .lm-pack-arrows {{ display: flex; flex-direction: column; gap: 2px; }}
+      .lm-arrow {{ background: rgba(255,255,255,0.08); border: none; color: #888; padding: 3px 8px; border-radius: 4px; cursor: pointer; font-size: 12px; }}
+      .lm-arrow:hover:not(:disabled) {{ background: rgba(102,126,234,0.3); color: #fff; }}
+      .lm-arrow:disabled {{ opacity: 0.2; cursor: default; }}
+      
+      /* Pack info */
+      .lm-pack-info {{ flex: 1; min-width: 0; }}
+      .lm-pack-uuid {{ font-family: monospace; font-size: 11px; color: #667eea; background: rgba(102,126,234,0.12); padding: 2px 8px; border-radius: 4px; display: inline-block; margin-bottom: 4px; }}
+      .lm-pack-title {{ font-weight: 600; font-size: 15px; color: #e8e8e8; }}
+      .lm-pack-desc {{ font-size: 12px; color: #888; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+      
+      /* Actions menu */
+      .lm-pack-actions {{ position: relative; }}
+      .lm-menu-btn {{ background: none; border: none; color: #888; font-size: 20px; cursor: pointer; padding: 4px 8px; border-radius: 4px; }}
+      .lm-menu-btn:hover {{ background: rgba(255,255,255,0.1); color: #fff; }}
+      .lm-menu {{ position: absolute; right: 0; top: 100%; background: #2a2a2e; border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; padding: 4px; z-index: 100; min-width: 180px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); }}
+      .lm-menu button {{ display: block; width: 100%; text-align: left; background: none; border: none; color: #ddd; padding: 8px 12px; border-radius: 4px; font-size: 13px; cursor: pointer; }}
+      .lm-menu button:hover {{ background: rgba(255,255,255,0.08); }}
+      .lm-menu .lm-danger {{ color: #e85d5d; }}
+      .lm-menu .lm-danger:hover {{ background: rgba(232,93,93,0.12); }}
+      
+      /* Notification */
+      .lm-notification {{ position: fixed; top: 12px; left: 50%; transform: translateX(-50%); padding: 10px 24px; border-radius: 8px; font-size: 14px; z-index: 1000; animation: lm-fade-in 0.2s; }}
+      .lm-success {{ background: #1a3d1a; color: #7ed47e; border: 1px solid #2d5a27; }}
+      .lm-error {{ background: #3d1a1a; color: #e85d5d; border: 1px solid #5a2727; }}
+      @keyframes lm-fade-in {{ from {{ opacity: 0; transform: translateX(-50%) translateY(-10px); }} to {{ opacity: 1; transform: translateX(-50%) translateY(0); }} }}
+      
+      .lm-empty {{ text-align: center; padding: 30px; color: #666; font-size: 14px; }}
+    </style>
+    </head>
+    <body>
+      <div id="lunii-manager"></div>
+      <script>{js_code}</script>
+    </body>
+    </html>
     """
     
-    components.html(js_code, height=120)
+    components.html(html, height=600, scrolling=True)
 
 
 def render_legal_notice():
