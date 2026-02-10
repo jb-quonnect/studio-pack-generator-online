@@ -37,6 +37,7 @@ from modules.pack_builder import PackBuilder, BuildOptions, parse_folder_to_tree
 from modules.zip_handler import extract_zip, is_studio_pack, extract_pack_to_folder, get_zip_info
 from modules.rss_handler import parse_rss_feed, RssFeed, RssEpisode, download_episode_audio
 from modules.story_generator import load_story_pack
+from modules.lunii_converter import LuniiPackConverter, is_lunii_pack, validate_studio_pack
 
 # Configuration de la page
 st.set_page_config(
@@ -124,6 +125,12 @@ def init_session_state():
         
         # Tree structure for manual building
         st.session_state.tree_nodes = []
+        
+        # Lunii settings
+        st.session_state.lunii_version = "V2"
+        st.session_state.lunii_zip_data = None
+        st.session_state.lunii_zip_filename = None
+        st.session_state.lunii_conversion_complete = False
         
         # Create a new session
         reset_session_manager()
@@ -235,6 +242,20 @@ def render_expert_options():
             st.caption(f"OS: {health['details'].get('distro', 'N/A')}")
             with st.expander("Voir Message Erreur FFmpeg"):
                 st.code(health['details'].get('ffmpeg_error', 'Pas d\'erreur'))
+
+    # Lunii options (always visible if expert mode)
+    with st.sidebar.expander("🎧 Lunii", expanded=False):
+        lunii_versions = [
+            ("V2", "V2 — XXTEA (compatible tous appareils)"),
+            ("V3", "V3 — AES-CBC (appareils récents)"),
+        ]
+        st.selectbox(
+            "Version de chiffrement",
+            options=[v[0] for v in lunii_versions],
+            format_func=lambda x: next((v[1] for v in lunii_versions if v[0] == x), x),
+            key='lunii_version',
+            help="V2 est compatible avec la majorité des appareils Lunii. V3 nécessite des clés spécifiques."
+        )
 
 
 def render_input_tabs():
@@ -979,6 +1000,244 @@ def render_simulator_tab():
             st.error("❌ Impossible de charger le pack pour l'édition")
 
 
+def render_lunii_upload():
+    """Affiche l'interface d'upload vers Lunii."""
+    
+    st.markdown("""
+    Convertissez votre pack au format natif Lunii pour le charger directement 
+    sur votre boîte à histoires.
+    """)
+    
+    # Lunii version selector (inline)
+    col_ver, col_info = st.columns([1, 2])
+    with col_ver:
+        version = st.selectbox(
+            "Version Lunii",
+            ["V2", "V3"],
+            index=0 if st.session_state.get('lunii_version', 'V2') == 'V2' else 1,
+            key="lunii_version_selector",
+            help="V2 (XXTEA) est compatible avec la majorité des appareils"
+        )
+    with col_info:
+        if version == "V2":
+            st.info("🔐 Chiffrement **XXTEA** — Compatible tous appareils Lunii")
+        else:
+            st.warning("🔐 Chiffrement **AES-CBC** — Appareils V3 uniquement. Nécessite les clés de l'appareil.")
+    
+    # V3 key inputs (only if V3 selected)
+    aes_key = None
+    aes_iv = None
+    if version == "V3":
+        with st.expander("🔑 Clés de chiffrement V3", expanded=True):
+            st.caption("Entrez les clés hexadécimales de votre appareil (trouvées dans le fichier .md)")
+            key_hex = st.text_input("Clé AES (hex, 32 caractères)", key="aes_key_input")
+            iv_hex = st.text_input("IV AES (hex, 32 caractères)", key="aes_iv_input")
+            if key_hex and iv_hex:
+                try:
+                    aes_key = bytes.fromhex(key_hex.strip())
+                    aes_iv = bytes.fromhex(iv_hex.strip())
+                    if len(aes_key) != 16 or len(aes_iv) != 16:
+                        st.error("Les clés doivent faire exactement 16 octets (32 caractères hex)")
+                        aes_key = None
+                        aes_iv = None
+                except ValueError:
+                    st.error("Format hexadécimal invalide")
+    
+    st.markdown("---")
+    
+    # === Conversion Button ===
+    can_convert = version == "V2" or (aes_key is not None and aes_iv is not None)
+    
+    if st.session_state.get('lunii_conversion_complete') and st.session_state.get('lunii_zip_data'):
+        # Already converted — show results
+        st.success(f"✅ Pack Lunii prêt: **{st.session_state.lunii_zip_filename}**")
+        
+        col_dl, col_usb = st.columns(2)
+        
+        with col_dl:
+            st.download_button(
+                "📥 Télécharger le Pack Lunii",
+                st.session_state.lunii_zip_data,
+                file_name=st.session_state.lunii_zip_filename,
+                mime="application/zip",
+                type="primary",
+                use_container_width=True,
+                key="download_lunii"
+            )
+            st.caption("Décompressez sur votre Lunii (raccourci USB)")
+        
+        with col_usb:
+            # JS-based USB transfer (Chrome/Edge only)
+            _render_usb_transfer_button()
+        
+        # Reconvert button
+        if st.button("🔄 Reconvertir", key="reconvert_lunii"):
+            st.session_state.lunii_conversion_complete = False
+            st.session_state.lunii_zip_data = None
+            st.session_state.lunii_zip_filename = None
+            st.rerun()
+    
+    elif can_convert:
+        if st.button("🎧 Convertir pour Lunii", type="primary", use_container_width=True, key="convert_lunii"):
+            _run_lunii_conversion(version, aes_key, aes_iv)
+    else:
+        st.warning("⚠️ Entrez les clés AES de votre appareil V3 pour continuer")
+
+
+def _run_lunii_conversion(version: str, aes_key=None, aes_iv=None):
+    """Execute the Lunii conversion with progress tracking."""
+    import tempfile
+    
+    progress_bar = st.progress(0, text="Démarrage de la conversion...")
+    status_text = st.empty()
+    
+    def update_progress(progress: float, message: str):
+        progress_bar.progress(min(progress, 1.0), text=message)
+        status_text.caption(message)
+    
+    try:
+        # Write current pack ZIP to temp file
+        with tempfile.NamedTemporaryFile(suffix='.zip', delete=False) as tmp:
+            tmp.write(st.session_state.output_zip_data)
+            tmp_path = tmp.name
+        
+        # Run conversion
+        converter = LuniiPackConverter(
+            zip_path=tmp_path,
+            version=version,
+            aes_key=aes_key,
+            aes_iv=aes_iv
+        )
+        
+        result_path = converter.convert(progress_callback=update_progress)
+        
+        if result_path:
+            # Read result
+            with open(result_path, 'rb') as f:
+                lunii_data = f.read()
+            
+            # Store in session
+            base_name = os.path.splitext(st.session_state.output_pack_filename or "pack")[0]
+            st.session_state.lunii_zip_data = lunii_data
+            st.session_state.lunii_zip_filename = f"{base_name}_lunii.zip"
+            st.session_state.lunii_conversion_complete = True
+            
+            # Cleanup temp files
+            try:
+                os.unlink(tmp_path)
+                if result_path != tmp_path:
+                    os.unlink(result_path)
+            except Exception:
+                pass
+            
+            st.rerun()
+        else:
+            st.error("❌ La conversion a échoué. Vérifiez les logs pour plus de détails.")
+            
+    except Exception as e:
+        st.error(f"❌ Erreur lors de la conversion: {e}")
+        logger.error(f"Lunii conversion error: {e}", exc_info=True)
+
+
+def _render_usb_transfer_button():
+    """Render the USB transfer button with browser detection."""
+    import streamlit.components.v1 as components
+    
+    # JS component for USB transfer
+    js_code = """
+    <div id="lunii-transfer-container" style="text-align: center;">
+        <style>
+            .lunii-btn {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                border: none;
+                padding: 12px 24px;
+                border-radius: 8px;
+                font-size: 16px;
+                cursor: pointer;
+                width: 100%;
+                transition: all 0.3s ease;
+            }
+            .lunii-btn:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(102,126,234,0.4); }
+            .lunii-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+            .lunii-status { margin-top: 8px; font-size: 13px; color: #888; }
+            .lunii-progress { width: 100%; height: 4px; background: #333; border-radius: 2px; margin-top: 8px; overflow: hidden; }
+            .lunii-progress-bar { height: 100%; background: linear-gradient(90deg, #667eea, #764ba2); transition: width 0.3s; }
+            .lunii-unsupported { color: #f0ad4e; font-size: 13px; margin-top: 4px; }
+        </style>
+        
+        <script>
+            const isSupported = 'showDirectoryPicker' in window;
+            const container = document.getElementById('lunii-transfer-container');
+            
+            if (isSupported) {
+                container.innerHTML += `
+                    <button class="lunii-btn" onclick="startTransfer()">🔌 Transférer via USB</button>
+                    <div class="lunii-progress" style="display:none;" id="lunii-pg">
+                        <div class="lunii-progress-bar" id="lunii-pb" style="width: 0%"></div>
+                    </div>
+                    <div class="lunii-status" id="lunii-st">Branchez votre Lunii en USB</div>
+                `;
+            } else {
+                container.innerHTML += `
+                    <button class="lunii-btn" disabled>🔌 Transférer via USB</button>
+                    <div class="lunii-unsupported">⚠️ Transfert USB non supporté sur ce navigateur.<br>Utilisez Chrome ou Edge.</div>
+                `;
+            }
+            
+            async function startTransfer() {
+                const btn = container.querySelector('.lunii-btn');
+                const progress = document.getElementById('lunii-pg');
+                const bar = document.getElementById('lunii-pb');
+                const status = document.getElementById('lunii-st');
+                
+                btn.disabled = true;
+                progress.style.display = 'block';
+                
+                try {
+                    const dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+                    
+                    // Verify Lunii device
+                    let isLunii = false;
+                    for await (const entry of dirHandle.values()) {
+                        if (entry.name === '.pi' || entry.name === '.md') { isLunii = true; break; }
+                    }
+                    if (!isLunii) {
+                        try { await dirHandle.getDirectoryHandle('.content'); isLunii = true; } catch {}
+                    }
+                    
+                    if (!isLunii) {
+                        status.textContent = '❌ Appareil Lunii non détecté dans ce dossier';
+                        btn.disabled = false;
+                        progress.style.display = 'none';
+                        return;
+                    }
+                    
+                    status.textContent = '📦 Téléchargement du pack...';
+                    bar.style.width = '10%';
+                    
+                    // Notify Streamlit to provide the data via download
+                    status.textContent = '✅ Appareil Lunii détecté ! Utilisez le bouton Télécharger, puis copiez le contenu sur votre Lunii.';
+                    bar.style.width = '100%';
+                    btn.disabled = false;
+                    
+                } catch (error) {
+                    if (error.name === 'AbortError') {
+                        status.textContent = 'Transfert annulé';
+                    } else {
+                        status.textContent = '❌ Erreur: ' + error.message;
+                    }
+                    btn.disabled = false;
+                    progress.style.display = 'none';
+                }
+            }
+        </script>
+    </div>
+    """
+    
+    components.html(js_code, height=120)
+
+
 def render_legal_notice():
     """Affiche les mentions légales."""
     st.markdown("""
@@ -1047,14 +1306,20 @@ def main():
                     use_container_width=True,
                     key="download_main"
                 )
+        # === SECTION 4: Upload Lunii ===
+        with st.expander("🎧 4. Uploader dans ma Lunii", expanded=not st.session_state.get('lunii_conversion_complete')):
+            render_lunii_upload()
     else:
-        # Show disabled placeholders for sections 2 and 3
+        # Show disabled placeholders for sections 2, 3, and 4
         st.markdown("---")
         st.markdown("##### 👁️ 2. Aperçu & Vérification")
         st.info("💡 Générez d'abord un pack pour accéder à l'aperçu")
         
         st.markdown("##### 📥 3. Télécharger")
         st.info("💡 Générez d'abord un pack pour le télécharger")
+        
+        st.markdown("##### 🎧 4. Uploader dans ma Lunii")
+        st.info("💡 Générez d'abord un pack pour l'envoyer vers votre Lunii")
     
     # Legal notice
     render_legal_notice()
