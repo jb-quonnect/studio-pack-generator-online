@@ -101,12 +101,14 @@ def parse_duration(duration_str: str) -> float:
     return 0.0
 
 
-def parse_rss_feed(url: str) -> Optional[RssFeed]:
+def parse_rss_feed(url: str, existing_title: Optional[str] = None, existing_image_url: Optional[str] = None) -> Optional[RssFeed]:
     """
     Parse an RSS feed from URL.
     
     Args:
         url: RSS feed URL
+        existing_title: Optional title to force/use (for Radio France)
+        existing_image_url: Optional image URL to force/use (for Radio France)
         
     Returns:
         RssFeed object or None if failed
@@ -120,8 +122,8 @@ def parse_rss_feed(url: str) -> Optional[RssFeed]:
         try:
             from .radiofrance_api import RadioFranceClient
             show_id = url.replace('rf://', '')
-            logger.info(f"Detected Radio France virtual URL for show ID: {show_id}")
-            return RadioFranceClient.get_feed(show_id)
+            logger.info(f"Detected Radio France virtual URL for show ID: {show_id}, using existing metadata if available")
+            return RadioFranceClient.get_feed(show_id, existing_title, existing_image_url)
         except Exception as e:
             logger.error(f"Failed to fetch Radio France feed: {e}")
             return None

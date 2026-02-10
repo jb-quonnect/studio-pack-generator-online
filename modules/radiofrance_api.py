@@ -133,10 +133,15 @@ class RadioFranceClient:
         return results[:limit]
 
     @staticmethod
-    def get_feed(show_id: str) -> Optional[RssFeed]:
+    def get_feed(show_id: str, existing_title: Optional[str] = None, existing_image_url: Optional[str] = None) -> Optional[RssFeed]:
         """
         Fetch full episode history for a show and return RssFeed object.
         Handles pagination transparently.
+        
+        Args:
+            show_id: The Radio France Show ID
+            existing_title: Optional title from search results to use if API fails/is incomplete
+            existing_image_url: Optional image URL from search results to use if API fails/is incomplete
         """
         try:
             logger.info(f"Fetching full history for Radio France show: {show_id}")
@@ -201,8 +206,12 @@ class RadioFranceClient:
                 return None
 
             # 2. Build RssFeed object
+            # Use existing_title if provided (it comes from search results which are usually correct)
+            # Otherwise fallback to API data
+            feed_title = existing_title if existing_title else show_info.get('title', 'Unknown Radio France Show')
+            
             feed = RssFeed(
-                title=show_info.get('title', 'Unknown Radio France Show'),
+                title=feed_title,
                 description=show_info.get('standfirst', ''),
                 link=show_info.get('path', ''),
                 author="Radio France",
@@ -210,16 +219,14 @@ class RadioFranceClient:
             )
             
             # Image extraction with fallback to parent show image logic
-            # "Les Odyssées symphoniques" might not have an image, but parent "Les Odyssées" does?
-            # The API response for specific show doesn't link to parent visuals easily in 'show_info'
-            # But earlier we saw 'relationships' -> 'show' in diffusions...
-            # If show_info has no visuals, we can't do much unless we query parent.
-            # However, the debug output showed 'visuals' as empty list [] for the symphonic show.
-            
-            feed.image_url = RadioFranceClient._get_image_url(
-                show_info.get('visuals'), 
-                show_info.get('mainImage')
-            )
+            # Use existing_image_url if provided and valid
+            if existing_image_url:
+                feed.image_url = existing_image_url
+            else:
+                feed.image_url = RadioFranceClient._get_image_url(
+                    show_info.get('visuals'), 
+                    show_info.get('mainImage')
+                )
             
             # Fallback: If no image, try to get image from parent show using relationships
             if not feed.image_url:

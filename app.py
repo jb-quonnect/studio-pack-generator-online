@@ -518,7 +518,12 @@ def render_rss_input():
                     # Select Button
                     if st.button("Choisir", key=f"sel_{idx}", use_container_width=True):
                         with st.spinner("Chargement..."):
-                            feed = parse_rss_feed(res.feed_url)
+                            # Pass existing metadata to avoid re-fetching issues with API
+                            feed = parse_rss_feed(
+                                res.feed_url, 
+                                existing_title=res.title, 
+                                existing_image_url=res.image_url
+                            )
                             if feed:
                                 st.session_state.rss_feed = feed
                                 st.session_state.rss_search_results = None # Clear search to show feed
