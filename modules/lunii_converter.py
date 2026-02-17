@@ -881,17 +881,37 @@ class LuniiPackConverter:
 
                 logger.info(f"Expanded storyAudio: '{node.get('name')}' → announcement + playback nodes")
             else:
-                # Node has no storyAudio, or only one audio type → keep as-is
-                # Ensure controlSettings exist
+                # Node has no storyAudio → keep as-is
+                # Set proper controlSettings and optionIndex
+                node_type = node.get('type', '')
+                has_transition = node.get('okTransition') is not None
+
+                # For entrypoint/menu nodes with multiple options: set optionIndex=-1
+                # This enables wheel scrolling (optionIndex=-1 = "user selects")
+                # vs optionIndex>=0 = "auto-jump to that option"
+                if has_transition and 'optionIndex' not in node.get('okTransition', {}):
+                    if node_type in ('entrypoint', 'cover', ''):
+                        node['okTransition']['optionIndex'] = -1
+
                 if 'controlSettings' not in node:
-                    has_transition = node.get('okTransition') is not None
-                    node['controlSettings'] = {
-                        'wheel': has_transition,
-                        'ok': has_transition,
-                        'home': not has_transition,  # home on terminal nodes
-                        'pause': not has_transition,
-                        'autoplay': not has_transition
-                    }
+                    if node_type in ('entrypoint', 'cover'):
+                        # Entrypoint: wheel+ok for menu, no home (top level)
+                        node['controlSettings'] = {
+                            'wheel': True, 'ok': True, 'home': False,
+                            'pause': False, 'autoplay': False
+                        }
+                    elif has_transition:
+                        # Menu/navigation node
+                        node['controlSettings'] = {
+                            'wheel': True, 'ok': True, 'home': True,
+                            'pause': False, 'autoplay': False
+                        }
+                    else:
+                        # Terminal node (shouldn't happen after expansion, but fallback)
+                        node['controlSettings'] = {
+                            'wheel': False, 'ok': False, 'home': True,
+                            'pause': True, 'autoplay': True
+                        }
                 expanded_stages.append(node)
 
         # Replace with expanded node lists
