@@ -849,10 +849,11 @@ class LuniiPackConverter:
                     'actionNode': story_action_id,
                     'optionIndex': 0
                 }
-                # Control settings for announcement: NO wheel/ok (auto-transition)
+                # Control settings for announcement node (scrollable option in menu)
+                # Matching Pack 52 option nodes: wheel+ok enabled for user selection
                 announce_node['controlSettings'] = {
-                    'wheel': False, 'ok': False, 'home': True,
-                    'pause': False, 'autoplay': True
+                    'wheel': True, 'ok': True, 'home': True,
+                    'pause': False, 'autoplay': False
                 }
                 expanded_stages.append(announce_node)
 
